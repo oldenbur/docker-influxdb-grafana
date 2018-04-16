@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+const (
+	clusterId   = "tig-cluster"
+	serviceName = "golang-statsd"
+	countField  = "gocount"
+	timingField = "gotiming"
+	gaugeField  = "gogauge"
+)
+
 type StatsdSender interface {
 	io.Closer
 	Send() error
@@ -35,7 +43,7 @@ func (s *statsdSender) Send() error {
 
 	seelog.Infof(`connecting to statsd at '%s'`, s.statsdAddr)
 	var err error
-	s.stats, err = NewMetricsReporter(s.statsdAddr, "gitcluster", "golang-statsd")
+	s.stats, err = NewMetricsReporter(s.statsdAddr, clusterId, serviceName)
 	if err != nil {
 		return seelog.Errorf("statsdFeed statsd.New error: %v", err)
 	}
@@ -44,35 +52,7 @@ func (s *statsdSender) Send() error {
 		s.wg.Add(1)
 		defer s.wg.Done()
 
-		t := time.NewTicker(5 * time.Second)
-		defer t.Stop()
-
-		g := newGrowShrinker(0, 100)
-
-		for {
-			select {
-			case <-t.C:
-				seelog.Tracef(`firing stats`)
-
-				cnt := int(math.Floor((rand.NormFloat64() / 0.1) + 50))
-				s.stats.Count("mycount", cnt)
-
-				dur := math.Floor(rand.ExpFloat64() / 0.001)
-				s.stats.Timing("mytiming", dur)
-
-				qlen := g.sample()
-				s.stats.Gauge("myguage", qlen)
-
-				seelog.Debugf(`fired stats - cnt: %d  dur: %f  qlen: %d`, cnt, dur, qlen)
-
-				break
-
-			case <-s.closeChan:
-				seelog.Infof(`closing stats timer`)
-				return
-
-			}
-		}
+		s.sendStats()
 	}()
 
 	return nil
@@ -87,6 +67,39 @@ func (s *statsdSender) Close() error {
 	s.wg.Wait()
 
 	return nil
+}
+
+func (s *statsdSender) sendStats() {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+
+	g := newGrowShrinker(0, 100)
+
+	for {
+		select {
+		case <-t.C:
+			seelog.Tracef(`firing stats`)
+
+			cnt := int(math.Floor((rand.NormFloat64() / 0.1) + 50))
+			s.stats.Count(countField, cnt)
+
+			dur := math.Floor(rand.ExpFloat64() / 0.001)
+			s.stats.Timing(timingField, dur)
+
+			qlen := g.sample()
+			s.stats.Gauge(gaugeField, qlen)
+
+			seelog.Debugf(`fired stats - %s: %d  %s: %f  %s: %d`,
+				countField, cnt, timingField, dur, gaugeField, qlen)
+
+			break
+
+		case <-s.closeChan:
+			seelog.Infof(`closing stats timer`)
+			return
+
+		}
+	}
 }
 
 type MetricsReporter interface {
