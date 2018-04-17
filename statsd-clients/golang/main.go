@@ -39,7 +39,7 @@ func main() {
 func statsdFeed(c *cli.Context) error {
 
 	addr := fmt.Sprintf(`%s:%d`, c.String(statsdHostFlag), c.Int(statsdPortFlag))
-	sender := NewStatsdSender(addr)
+	sender := NewStatsSender(addr)
 	if err := sender.Send(); err != nil {
 		return seelog.Errorf("sender.Send error: %v", err)
 	}

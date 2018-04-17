@@ -2,11 +2,9 @@ package main
 
 import (
 	"github.com/cihub/seelog"
-	"gopkg.in/alexcesaro/statsd.v2"
 	"io"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 )
@@ -19,31 +17,31 @@ const (
 	gaugeField  = "gogauge"
 )
 
-type StatsdSender interface {
+type StatsSender interface {
 	io.Closer
 	Send() error
 }
 
-type statsdSender struct {
+type statsSender struct {
 	statsdAddr string
 	closeChan  chan bool
-	stats      MetricsReporter
+	stats      StatsdSender
 	wg         *sync.WaitGroup
 }
 
-func NewStatsdSender(statsdAddr string) StatsdSender {
-	return &statsdSender{
+func NewStatsSender(statsdAddr string) StatsSender {
+	return &statsSender{
 		statsdAddr: statsdAddr,
 		closeChan:  make(chan bool),
 		wg:         &sync.WaitGroup{},
 	}
 }
 
-func (s *statsdSender) Send() error {
+func (s *statsSender) Send() error {
 
 	seelog.Infof(`connecting to statsd at '%s'`, s.statsdAddr)
 	var err error
-	s.stats, err = NewMetricsReporter(s.statsdAddr, clusterId, serviceName)
+	s.stats, err = NewStatsdSender(s.statsdAddr, clusterId, serviceName)
 	if err != nil {
 		return seelog.Errorf("statsdFeed statsd.New error: %v", err)
 	}
@@ -58,7 +56,7 @@ func (s *statsdSender) Send() error {
 	return nil
 }
 
-func (s *statsdSender) Close() error {
+func (s *statsSender) Close() error {
 
 	if s.stats != nil {
 		s.stats.Close()
@@ -69,7 +67,7 @@ func (s *statsdSender) Close() error {
 	return nil
 }
 
-func (s *statsdSender) sendStats() {
+func (s *statsSender) sendStats() {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
 
@@ -100,29 +98,6 @@ func (s *statsdSender) sendStats() {
 
 		}
 	}
-}
-
-type MetricsReporter interface {
-	Count(field string, val interface{})
-	Timing(field string, val interface{})
-	Gauge(field string, val interface{})
-	Close()
-}
-
-func NewMetricsReporter(endpoint, clusterid, service string) (MetricsReporter, error) {
-
-	var err error
-	var host string
-	if host, err = os.Hostname(); err != nil {
-		seelog.Warn("hostname error: ", err)
-		host = "default"
-	}
-
-	return statsd.New(
-		statsd.Address(endpoint),
-		statsd.TagsFormat(statsd.InfluxDB),
-		statsd.Tags("cluster", clusterid, "host", host, "service", service),
-	)
 }
 
 type growShrinker struct {

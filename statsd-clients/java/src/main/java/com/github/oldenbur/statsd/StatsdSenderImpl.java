@@ -57,22 +57,16 @@ public class StatsdSenderImpl implements StatsdSender {
 
     @Override
     public void count(String field, int value) {
-        String taggedField = addTags(field);
-        logger.debug("count - field: {}  value: {}", taggedField, value);
-        statsd.count(taggedField, value);
+        statsd.count(addTags(field), value);
     }
 
     @Override
     public void gauge(String field, int valueMs) {
-        String taggedField = addTags(field);
-        logger.debug("gauge - field: {}  value: {}", taggedField, valueMs);
-        statsd.recordGaugeValue(taggedField, valueMs);
+        statsd.recordGaugeValue(addTags(field), valueMs);
     }
 
     @Override
     public void timing(String field, int value) {
-        String taggedField = addTags(field);
-        logger.debug("timing - field: {}  value: {}", taggedField, value);
-        statsd.recordExecutionTime(taggedField, value);
+        statsd.recordExecutionTime(addTags(field), value);
     }
 }
