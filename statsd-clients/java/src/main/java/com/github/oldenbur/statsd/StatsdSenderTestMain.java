@@ -50,19 +50,22 @@ public class StatsdSenderTestMain {
         TimerTask task = new TimerTask() {
             @Override
             public void run() {
-                logger.info("sending to statsd");
-                statsd.count(COUNT_FIELD, 10);
-                statsd.gauge(GAUGE_FIELD, 100);
-                statsd.timing(TIMING_FIELD, 25);
+                logger.trace("sending to statsd");
+
+                int count = (int)(100.0 * Math.random()) + 50;
+                int gauge = (int)(Math.round(Math.random()));
+                int timing = (int)(100.0 * Math.random()) + 50;
+
+                statsd.count(COUNT_FIELD, count);
+                statsd.gauge(GAUGE_FIELD, gauge);
+                statsd.timing(TIMING_FIELD, timing);
+
+                logger.info("fired stats - {}: {}  {}: {}  {}: {}", COUNT_FIELD, count, GAUGE_FIELD, gauge, TIMING_FIELD, timing);
             }
         };
 
         Timer timer = new Timer(false);
         timer.scheduleAtFixedRate(task, 0, 5000);
-//        Runtime.getRuntime().addShutdownHook(new Thread(){
-//            @Override
-//            public void run() { logger.info("shutdown hook thread run()"); }
-//        });
         logger.info("StatsdSenderTestMain complete");
     }
 
