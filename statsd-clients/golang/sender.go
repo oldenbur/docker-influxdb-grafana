@@ -2,40 +2,46 @@ package main
 
 import (
 	"github.com/cihub/seelog"
-	"gopkg.in/alexcesaro/statsd.v2"
 	"io"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 )
 
-type StatsdSender interface {
+const (
+	clusterId   = "tig-cluster"
+	serviceName = "golang-statsd"
+	countField  = "gocount"
+	timingField = "gotiming"
+	gaugeField  = "gogauge"
+)
+
+type StatsSender interface {
 	io.Closer
 	Send() error
 }
 
-type statsdSender struct {
+type statsSender struct {
 	statsdAddr string
 	closeChan  chan bool
-	stats      MetricsReporter
+	stats      StatsdSender
 	wg         *sync.WaitGroup
 }
 
-func NewStatsdSender(statsdAddr string) StatsdSender {
-	return &statsdSender{
+func NewStatsSender(statsdAddr string) StatsSender {
+	return &statsSender{
 		statsdAddr: statsdAddr,
 		closeChan:  make(chan bool),
 		wg:         &sync.WaitGroup{},
 	}
 }
 
-func (s *statsdSender) Send() error {
+func (s *statsSender) Send() error {
 
 	seelog.Infof(`connecting to statsd at '%s'`, s.statsdAddr)
 	var err error
-	s.stats, err = NewMetricsReporter(s.statsdAddr, "gitcluster", "golang-statsd")
+	s.stats, err = NewStatsdSender(s.statsdAddr, clusterId, serviceName)
 	if err != nil {
 		return seelog.Errorf("statsdFeed statsd.New error: %v", err)
 	}
@@ -44,41 +50,13 @@ func (s *statsdSender) Send() error {
 		s.wg.Add(1)
 		defer s.wg.Done()
 
-		t := time.NewTicker(5 * time.Second)
-		defer t.Stop()
-
-		g := newGrowShrinker(0, 100)
-
-		for {
-			select {
-			case <-t.C:
-				seelog.Tracef(`firing stats`)
-
-				cnt := int(math.Floor((rand.NormFloat64() / 0.1) + 50))
-				s.stats.Count("mycount", cnt)
-
-				dur := math.Floor(rand.ExpFloat64() / 0.001)
-				s.stats.Timing("mytiming", dur)
-
-				qlen := g.sample()
-				s.stats.Gauge("myguage", qlen)
-
-				seelog.Debugf(`fired stats - cnt: %d  dur: %f  qlen: %d`, cnt, dur, qlen)
-
-				break
-
-			case <-s.closeChan:
-				seelog.Infof(`closing stats timer`)
-				return
-
-			}
-		}
+		s.sendStats()
 	}()
 
 	return nil
 }
 
-func (s *statsdSender) Close() error {
+func (s *statsSender) Close() error {
 
 	if s.stats != nil {
 		s.stats.Close()
@@ -89,27 +67,37 @@ func (s *statsdSender) Close() error {
 	return nil
 }
 
-type MetricsReporter interface {
-	Count(field string, val interface{})
-	Timing(field string, val interface{})
-	Gauge(field string, val interface{})
-	Close()
-}
+func (s *statsSender) sendStats() {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
 
-func NewMetricsReporter(endpoint, clusterid, service string) (MetricsReporter, error) {
+	g := newGrowShrinker(0, 100)
 
-	var err error
-	var host string
-	if host, err = os.Hostname(); err != nil {
-		seelog.Warn("hostname error: ", err)
-		host = "default"
+	for {
+		select {
+		case <-t.C:
+			seelog.Tracef(`firing stats`)
+
+			cnt := int(math.Floor((rand.NormFloat64() / 0.1) + 50))
+			s.stats.Count(countField, cnt)
+
+			dur := math.Floor(rand.ExpFloat64() / 0.001)
+			s.stats.Timing(timingField, dur)
+
+			qlen := g.sample()
+			s.stats.Gauge(gaugeField, qlen)
+
+			seelog.Debugf(`fired stats - %s: %d  %s: %f  %s: %d`,
+				countField, cnt, timingField, dur, gaugeField, qlen)
+
+			break
+
+		case <-s.closeChan:
+			seelog.Infof(`closing stats timer`)
+			return
+
+		}
 	}
-
-	return statsd.New(
-		statsd.Address(endpoint),
-		statsd.TagsFormat(statsd.InfluxDB),
-		statsd.Tags("cluster", clusterid, "host", host, "service", service),
-	)
 }
 
 type growShrinker struct {
